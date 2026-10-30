@@ -1,0 +1,209 @@
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .access_schemas import (
+    WorkspaceCreationAccessResponse,
+)
+from .account_service import AccountBillingService
+from .api_schemas import (
+    AccountEntitlementsPublic,
+    BillingPlanPublic,
+    BillingPlansResponse,
+    CurrentSubscriptionPublic,
+)
+from .catalog_service import BillingCatalogService
+from .enums import SubscriptionStatus
+from .plans import PlanCode
+from .payment_policy import effective_status
+from .exemptions import is_billing_exempt
+from .repository import BillingRepository
+from .workspace_count import (
+    count_owned_active_workspaces,
+)
+from .workspace_decision import (
+    build_workspace_creation_decision,
+)
+
+
+class BillingAPIService:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        repository: BillingRepository | None = None,
+        catalog_service: BillingCatalogService | None = None,
+        account_service: AccountBillingService | None = None,
+    ) -> None:
+        self.session = session
+
+        self.repository = (
+            repository
+            or BillingRepository()
+        )
+
+        self.catalog_service = (
+            catalog_service
+            or BillingCatalogService()
+        )
+
+        self.account_service = (
+            account_service
+            or AccountBillingService(
+                repository=self.repository
+            )
+        )
+
+    def list_plans(
+        self,
+    ) -> BillingPlansResponse:
+        plans = (
+            self.catalog_service
+            .list_plans()
+        )
+
+        return BillingPlansResponse(
+            plans=[
+                BillingPlanPublic(
+                    code=plan.code,
+                    display_name=plan.display_name,
+                    workspace_limit=(
+                        plan.workspace_limit
+                    ),
+                    member_limit_per_workspace=(
+                        plan.member_limit_per_workspace
+                    ),
+                    monitoring_enabled=(
+                        plan.monitoring_enabled
+                    ),
+                    live_screen_enabled=(
+                        plan.live_screen_enabled
+                    ),
+                    advanced_analytics_enabled=(
+                        plan.advanced_analytics_enabled
+                    ),
+                )
+                for plan in plans
+            ]
+        )
+
+    async def get_current_subscription(
+        self,
+        *,
+        user_id: uuid.UUID,
+    ) -> CurrentSubscriptionPublic:
+        if await is_billing_exempt(self.session, user_id):
+            return CurrentSubscriptionPublic(
+                plan_code=PlanCode.BUSINESS, status=SubscriptionStatus.ACTIVE,
+                current_period_start=None, current_period_end=None,
+            )
+
+        subscription = (
+            await self.repository
+            .get_subscription_for_user(
+                self.session,
+                user_id=user_id,
+            )
+        )
+
+        if subscription is None:
+            return CurrentSubscriptionPublic(
+                plan_code=PlanCode.FREE,
+                status=SubscriptionStatus.NONE,
+                current_period_start=None,
+                current_period_end=None,
+            )
+
+        return CurrentSubscriptionPublic(
+            plan_code=(
+                subscription.plan_code
+            ),
+            status=SubscriptionStatus(effective_status(
+                subscription.status,
+                subscription.current_period_end,
+            )),
+            current_period_start=(
+                subscription.current_period_start
+            ),
+            current_period_end=(
+                subscription.current_period_end
+            ),
+        )
+
+    async def get_current_entitlements(
+        self,
+        *,
+        user_id: uuid.UUID,
+    ) -> AccountEntitlementsPublic:
+        entitlements = (
+            await self.account_service
+            .get_entitlements(
+                self.session,
+                user_id=user_id,
+                workspace_count_loader=(
+                    count_owned_active_workspaces
+                ),
+            )
+        )
+
+        return AccountEntitlementsPublic(
+            plan_code=(
+                entitlements.plan_code
+            ),
+            subscription_status=(
+                entitlements.subscription_status
+            ),
+            workspace_limit=(
+                entitlements.workspace_limit
+            ),
+            workspace_count=(
+                entitlements.workspace_count
+            ),
+            create_workspace=(
+                entitlements.create_workspace
+            ),
+            monitoring=(
+                entitlements.monitoring
+            ),
+            live_screen=(
+                entitlements.live_screen
+            ),
+            advanced_analytics=(
+                entitlements.advanced_analytics
+            ),
+        )
+
+    async def get_workspace_creation_access(
+        self,
+        *,
+        user_id: uuid.UUID,
+    ) -> WorkspaceCreationAccessResponse:
+        entitlements = (
+            await self.account_service
+            .get_entitlements(
+                self.session,
+                user_id=user_id,
+                workspace_count_loader=(
+                    count_owned_active_workspaces
+                ),
+            )
+        )
+
+        decision = (
+            build_workspace_creation_decision(
+                entitlements
+            )
+        )
+
+        return WorkspaceCreationAccessResponse(
+            allowed=decision.allowed,
+            reason=decision.reason,
+            workspace_limit=(
+                decision.workspace_limit
+            ),
+            workspace_count=(
+                decision.workspace_count
+            ),
+        )

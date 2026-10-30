@@ -1,0 +1,204 @@
+
+from datetime import datetime
+from typing import Annotated, AsyncIterator
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_control_db
+from app.db.tenant_context import authorized_tenant_session
+from app.db.tenant_dependency import TenantRequestScope
+from app.modules.api_keys.authentication import (
+    APIKeyPrincipal,
+    authentication_error,
+)
+from app.modules.api_keys.authentication_dependency import require_api_key
+from app.modules.analytics.access import AnalyticsAccess, AnalyticsScope
+from app.modules.analytics.schemas import AnalyticsOverviewResponse
+from app.modules.analytics.service import AnalyticsService
+from app.modules.employees.models import Employee
+from app.modules.reports.execution import ReportExecutionService
+from app.modules.reports.permissions import ReportsAccess
+from app.modules.reports.schemas import (
+    ReportCatalogResponse,
+    ReportRunRequest,
+    ReportRunResponse,
+    ReportScope,
+)
+from app.modules.reports.service import ReportsService
+from app.modules.workspace_permissions.service import WorkspacePermissionService
+
+
+def key_tenant_scope(permission: str):
+    authenticate = require_api_key(permission)
+
+    async def dependency(
+        workspace_id: UUID,
+        principal: Annotated[
+            APIKeyPrincipal,
+            Depends(authenticate),
+        ],
+        control_session: Annotated[
+            AsyncSession,
+            Depends(get_control_db),
+        ],
+    ) -> AsyncIterator[TenantRequestScope]:
+        if principal.workspace_id != workspace_id:
+            raise authentication_error()
+
+        principal.require(permission)
+
+        async with authorized_tenant_session(
+            control_session,
+            workspace_id=workspace_id,
+            user_id=principal.user_id,
+        ) as (context, session):
+            if context.membership_id != principal.membership_id:
+                raise authentication_error()
+
+            WorkspacePermissionService(context).require(permission)
+
+            yield TenantRequestScope(
+                context=context,
+                session=session,
+            )
+
+    return dependency
+
+
+get_report_key_scope = key_tenant_scope("reports.self.read")
+get_analytics_key_scope = key_tenant_scope("analytics.self.read")
+
+ReportKeyScope = Annotated[
+    TenantRequestScope,
+    Depends(get_report_key_scope),
+]
+
+AnalyticsKeyScope = Annotated[
+    TenantRequestScope,
+    Depends(get_analytics_key_scope),
+]
+
+
+SELF_REPORT_ACCESS = ReportsAccess(
+    can_read_self=True,
+    can_read_team=False,
+    can_read_workspace=False,
+    can_export=False,
+)
+
+
+def validate_self_report(request: ReportRunRequest) -> None:
+    if request.scope != ReportScope.SELF:
+        raise HTTPException(
+            status_code=403,
+            detail="This API key permits self reports only.",
+        )
+
+    if any(
+        value is not None
+        for value in (
+            request.employee_id,
+            request.team_id,
+            request.department_id,
+        )
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Employee and organization filters are unavailable.",
+        )
+
+
+async def self_analytics_access(
+    scope: TenantRequestScope,
+) -> AnalyticsAccess:
+    result = await scope.session.execute(
+        select(Employee.id).where(
+            Employee.user_id == scope.user_id,
+            Employee.is_active.is_(True),
+        )
+    )
+
+    employee_id = result.scalar_one_or_none()
+
+    return AnalyticsAccess(
+        workspace_id=scope.workspace_id,
+        actor_user_id=scope.user_id,
+        role_key=scope.role_key,
+        scope=AnalyticsScope.SELF,
+        employee_ids=(
+            frozenset({employee_id})
+            if employee_id is not None
+            else frozenset()
+        ),
+    )
+
+
+router = APIRouter(
+    prefix="/workspaces/{workspace_id}/integrations",
+    tags=["API key self reads"],
+)
+
+
+@router.get(
+    "/reports/catalog",
+    response_model=ReportCatalogResponse,
+)
+async def integration_report_catalog(
+    scope: ReportKeyScope,
+    response: Response,
+) -> ReportCatalogResponse:
+    response.headers["Cache-Control"] = "no-store"
+
+    return ReportsService.catalog(SELF_REPORT_ACCESS)
+
+
+@router.post(
+    "/reports/run",
+    response_model=ReportRunResponse,
+)
+async def integration_run_report(
+    request: ReportRunRequest,
+    scope: ReportKeyScope,
+    response: Response,
+) -> ReportRunResponse:
+    validate_self_report(request)
+
+    response.headers["Cache-Control"] = "no-store"
+
+    service = ReportExecutionService(
+        workspace_id=scope.workspace_id,
+        scope=scope,
+        reports_access=SELF_REPORT_ACCESS,
+    )
+
+    # Existing execution also checks each report's domain permission.
+    return await service.run(request)
+
+
+@router.get(
+    "/analytics/overview",
+    response_model=AnalyticsOverviewResponse,
+)
+async def integration_analytics_overview(
+    scope: AnalyticsKeyScope,
+    response: Response,
+    start_at: datetime | None = Query(default=None),
+    end_at: datetime | None = Query(default=None),
+) -> AnalyticsOverviewResponse:
+    response.headers["Cache-Control"] = "no-store"
+
+    access = await self_analytics_access(scope)
+
+    window = AnalyticsService.resolve_window(
+        start_at=start_at,
+        end_at=end_at,
+    )
+
+    return await AnalyticsService(scope.session).overview(
+        workspace_id=scope.workspace_id,
+        access=access,
+        window=window,
+    )

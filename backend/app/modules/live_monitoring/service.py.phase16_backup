@@ -1,0 +1,840 @@
+from __future__ import annotations
+
+import uuid
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+)
+
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+)
+
+from app.core.exceptions import (
+    ValidationError,
+)
+from app.modules.desktop_agent.repository import (
+    DesktopAgentRepository,
+)
+from app.modules.live_monitoring.access import (
+    LiveMonitoringAccess,
+    can_access_employee,
+    require_device_owner,
+)
+from app.modules.live_monitoring.models import (
+    LIVE_SESSION_STATUS_ACCEPTED,
+    LIVE_SESSION_STATUS_ACTIVE,
+    LIVE_SESSION_STATUS_DENIED,
+    LIVE_SESSION_STATUS_ENDED,
+    LIVE_SESSION_STATUS_EXPIRED,
+    LIVE_SESSION_STATUS_REQUESTED,
+    SCREENSHOT_STATUS_COMPLETED,
+    SCREENSHOT_STATUS_DENIED,
+    SCREENSHOT_STATUS_EXPIRED,
+    SCREENSHOT_STATUS_PENDING,
+    LiveScreenSession,
+    ScreenshotCaptureRequest,
+)
+from app.modules.live_monitoring.repository import (
+    LiveMonitoringRepository,
+)
+from app.modules.live_monitoring.schemas import (
+    LiveMonitoringCapabilitiesResponse,
+    LiveScreenActivateRequest,
+    LiveScreenDecision,
+    LiveScreenEndRequest,
+    LiveScreenRequestCreate,
+    LiveScreenResponse,
+    ScreenshotAgentComplete,
+    ScreenshotAgentDeny,
+    ScreenshotListResponse,
+    ScreenshotRequestCreate,
+    ScreenshotResponse,
+)
+
+
+class LiveMonitoringNotFoundError(
+    LookupError
+):
+    pass
+
+
+class LiveMonitoringPermissionError(
+    PermissionError
+):
+    pass
+
+
+class LiveMonitoringService:
+    SCREENSHOT_TTL_SECONDS = 120
+
+    LIVE_REQUEST_TTL_SECONDS = 120
+
+    def __init__(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        self.session = session
+
+        self.repository = (
+            LiveMonitoringRepository(
+                session
+            )
+        )
+
+        self.devices = (
+            DesktopAgentRepository(
+                session
+            )
+        )
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(
+            timezone.utc
+        )
+
+    @staticmethod
+    def _screenshot_response(
+        item: ScreenshotCaptureRequest,
+    ) -> ScreenshotResponse:
+        return (
+            ScreenshotResponse
+            .model_validate(
+                item
+            )
+        )
+
+    @staticmethod
+    def _live_response(
+        item: LiveScreenSession,
+    ) -> LiveScreenResponse:
+        return (
+            LiveScreenResponse
+            .model_validate(
+                item
+            )
+        )
+
+    async def _device(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        device_id: uuid.UUID,
+    ):
+        device = await self.devices.get(
+            device_id=device_id
+        )
+
+        if device is None:
+            raise LiveMonitoringNotFoundError(
+                "Desktop agent device not found."
+            )
+
+        if device.is_disabled:
+            raise LiveMonitoringPermissionError(
+                "Desktop agent device is disabled."
+            )
+
+        if not can_access_employee(
+            access=access,
+            employee_id=(
+                device.employee_id
+            ),
+        ):
+            raise LiveMonitoringPermissionError(
+                "Device is outside your permitted "
+                "employee scope."
+            )
+
+        return device
+
+    # =====================================================
+    # SCREENSHOTS
+    # =====================================================
+
+    async def request_screenshot(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        payload: ScreenshotRequestCreate,
+    ) -> ScreenshotResponse:
+        if (
+            not access
+            .can_request_screenshot
+        ):
+            raise LiveMonitoringPermissionError(
+                "Live monitoring view permission "
+                "required."
+            )
+
+        device = await self._device(
+            access=access,
+            device_id=(
+                payload.device_id
+            ),
+        )
+
+        now = self._now()
+
+        item = ScreenshotCaptureRequest(
+            device_id=device.id,
+
+            employee_id=(
+                device.employee_id
+            ),
+
+            requested_by_user_id=(
+                access.actor_user_id
+            ),
+
+            status=(
+                SCREENSHOT_STATUS_PENDING
+            ),
+
+            reason=payload.reason,
+
+            visible_indicator_required=True,
+
+            consent_required=True,
+
+            requested_at=now,
+
+            expires_at=(
+                now
+                + timedelta(
+                    seconds=(
+                        self
+                        .SCREENSHOT_TTL_SECONDS
+                    )
+                )
+            ),
+
+            metadata_json={},
+        )
+
+        item = await (
+            self.repository
+            .create_screenshot(
+                item
+            )
+        )
+
+        return self._screenshot_response(
+            item
+        )
+
+    async def complete_screenshot(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        request_id: uuid.UUID,
+        payload: ScreenshotAgentComplete,
+    ) -> ScreenshotResponse:
+        item = await (
+            self.repository
+            .get_screenshot(
+                request_id=request_id
+            )
+        )
+
+        if item is None:
+            raise LiveMonitoringNotFoundError(
+                "Screenshot request not found."
+            )
+
+        device = await self.devices.get(
+            device_id=item.device_id
+        )
+
+        if device is None:
+            raise LiveMonitoringNotFoundError(
+                "Desktop agent device not found."
+            )
+
+        try:
+            require_device_owner(
+                access=access,
+                device=device,
+            )
+        except ValidationError as exc:
+            raise (
+                LiveMonitoringPermissionError(
+                    str(
+                        exc
+                    )
+                )
+            ) from exc
+
+        if (
+            item.status
+            != SCREENSHOT_STATUS_PENDING
+        ):
+            raise ValidationError(
+                "Screenshot request is no longer "
+                "pending."
+            )
+
+        now = self._now()
+
+        if now > item.expires_at:
+            item.status = (
+                SCREENSHOT_STATUS_EXPIRED
+            )
+
+            await (
+                self.repository
+                .refresh_screenshot(
+                    item
+                )
+            )
+
+            raise ValidationError(
+                "Screenshot request has expired."
+            )
+
+        if (
+            payload.consent_confirmed
+            is not True
+        ):
+            raise ValidationError(
+                "Screenshot capture requires "
+                "explicit user consent."
+            )
+
+        if (
+            payload.visible_indicator_shown
+            is not True
+        ):
+            raise ValidationError(
+                "Screenshot capture requires "
+                "a visible capture indicator."
+            )
+
+        item.status = (
+            SCREENSHOT_STATUS_COMPLETED
+        )
+
+        item.consent_confirmed_at = now
+
+        item.completed_at = now
+
+        item.storage_object_key = (
+            payload.storage_object_key
+        )
+
+        item.sha256 = (
+            payload.sha256
+            .lower()
+        )
+
+        item.width = payload.width
+
+        item.height = payload.height
+
+        return self._screenshot_response(
+            await (
+                self.repository
+                .refresh_screenshot(
+                    item
+                )
+            )
+        )
+
+    async def deny_screenshot(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        request_id: uuid.UUID,
+        payload: ScreenshotAgentDeny,
+    ) -> ScreenshotResponse:
+        item = await (
+            self.repository
+            .get_screenshot(
+                request_id=request_id
+            )
+        )
+
+        if item is None:
+            raise LiveMonitoringNotFoundError(
+                "Screenshot request not found."
+            )
+
+        device = await self.devices.get(
+            device_id=item.device_id
+        )
+
+        if device is None:
+            raise LiveMonitoringNotFoundError(
+                "Desktop agent device not found."
+            )
+
+        try:
+            require_device_owner(
+                access=access,
+                device=device,
+            )
+        except ValidationError as exc:
+            raise (
+                LiveMonitoringPermissionError(
+                    str(
+                        exc
+                    )
+                )
+            ) from exc
+
+        if (
+            item.status
+            != SCREENSHOT_STATUS_PENDING
+        ):
+            raise ValidationError(
+                "Screenshot request is no longer "
+                "pending."
+            )
+
+        item.status = (
+            SCREENSHOT_STATUS_DENIED
+        )
+
+        item.completed_at = (
+            self._now()
+        )
+
+        if payload.reason:
+            item.metadata_json = {
+                "denial_reason": (
+                    payload.reason
+                ),
+            }
+
+        return self._screenshot_response(
+            await (
+                self.repository
+                .refresh_screenshot(
+                    item
+                )
+            )
+        )
+
+    async def list_screenshots(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        limit: int,
+        offset: int,
+    ) -> ScreenshotListResponse:
+        if (
+            not access
+            .can_request_screenshot
+        ):
+            raise LiveMonitoringPermissionError(
+                "Live monitoring view permission "
+                "required."
+            )
+
+        items, total = await (
+            self.repository
+            .list_screenshots(
+                employee_ids=(
+                    access
+                    .visible_employee_ids
+                ),
+                limit=limit,
+                offset=offset,
+            )
+        )
+
+        return ScreenshotListResponse(
+            items=[
+                self._screenshot_response(
+                    item
+                )
+                for item
+                in items
+            ],
+            total=total,
+        )
+
+    # =====================================================
+    # LIVE SCREEN
+    # =====================================================
+
+    async def request_live_screen(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        payload: LiveScreenRequestCreate,
+    ) -> LiveScreenResponse:
+        if (
+            not access
+            .can_request_live_screen
+        ):
+            raise LiveMonitoringPermissionError(
+                "Live screen permission required."
+            )
+
+        device = await self._device(
+            access=access,
+            device_id=payload.device_id,
+        )
+
+        now = self._now()
+
+        item = LiveScreenSession(
+            device_id=device.id,
+
+            employee_id=(
+                device.employee_id
+            ),
+
+            requested_by_user_id=(
+                access.actor_user_id
+            ),
+
+            status=(
+                LIVE_SESSION_STATUS_REQUESTED
+            ),
+
+            reason=payload.reason,
+
+            consent_required=True,
+
+            visible_indicator_required=True,
+
+            expires_at=(
+                now
+                + timedelta(
+                    seconds=(
+                        self
+                        .LIVE_REQUEST_TTL_SECONDS
+                    )
+                )
+            ),
+
+            transport="webrtc",
+
+            metadata_json={},
+        )
+
+        item = await (
+            self.repository
+            .create_live_session(
+                item
+            )
+        )
+
+        return self._live_response(
+            item
+        )
+
+    async def decide_live_screen(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        session_id: uuid.UUID,
+        payload: LiveScreenDecision,
+    ) -> LiveScreenResponse:
+        item = await (
+            self.repository
+            .get_live_session(
+                session_id=session_id
+            )
+        )
+
+        if item is None:
+            raise LiveMonitoringNotFoundError(
+                "Live screen session not found."
+            )
+
+        device = await self.devices.get(
+            device_id=item.device_id
+        )
+
+        if device is None:
+            raise LiveMonitoringNotFoundError(
+                "Desktop agent device not found."
+            )
+
+        try:
+            require_device_owner(
+                access=access,
+                device=device,
+            )
+        except ValidationError as exc:
+            raise (
+                LiveMonitoringPermissionError(
+                    str(
+                        exc
+                    )
+                )
+            ) from exc
+
+        if (
+            item.status
+            != LIVE_SESSION_STATUS_REQUESTED
+        ):
+            raise ValidationError(
+                "Live screen request is no longer "
+                "awaiting a decision."
+            )
+
+        now = self._now()
+
+        if now > item.expires_at:
+            item.status = (
+                LIVE_SESSION_STATUS_EXPIRED
+            )
+
+            await (
+                self.repository
+                .refresh_live_session(
+                    item
+                )
+            )
+
+            raise ValidationError(
+                "Live screen request has expired."
+            )
+
+        if payload.accepted:
+            if (
+                payload
+                .visible_indicator_shown
+                is not True
+            ):
+                raise ValidationError(
+                    "A visible live-screen indicator "
+                    "must be shown before acceptance."
+                )
+
+            item.status = (
+                LIVE_SESSION_STATUS_ACCEPTED
+            )
+
+            item.accepted_at = now
+
+        else:
+            item.status = (
+                LIVE_SESSION_STATUS_DENIED
+            )
+
+            item.ended_at = now
+
+        return self._live_response(
+            await (
+                self.repository
+                .refresh_live_session(
+                    item
+                )
+            )
+        )
+
+    async def activate_live_screen(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        session_id: uuid.UUID,
+        payload: LiveScreenActivateRequest,
+    ) -> LiveScreenResponse:
+        item = await (
+            self.repository
+            .get_live_session(
+                session_id=session_id
+            )
+        )
+
+        if item is None:
+            raise LiveMonitoringNotFoundError(
+                "Live screen session not found."
+            )
+
+        device = await self.devices.get(
+            device_id=item.device_id
+        )
+
+        if device is None:
+            raise LiveMonitoringNotFoundError(
+                "Desktop agent device not found."
+            )
+
+        try:
+            require_device_owner(
+                access=access,
+                device=device,
+            )
+        except ValidationError as exc:
+            raise (
+                LiveMonitoringPermissionError(
+                    str(
+                        exc
+                    )
+                )
+            ) from exc
+
+        if (
+            item.status
+            != LIVE_SESSION_STATUS_ACCEPTED
+        ):
+            raise ValidationError(
+                "Live screen session must be "
+                "accepted before activation."
+            )
+
+        now = self._now()
+
+        item.status = (
+            LIVE_SESSION_STATUS_ACTIVE
+        )
+
+        item.started_at = now
+
+        item.session_channel = (
+            payload.session_channel
+        )
+
+        return self._live_response(
+            await (
+                self.repository
+                .refresh_live_session(
+                    item
+                )
+            )
+        )
+
+    async def end_live_screen(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        session_id: uuid.UUID,
+        payload: LiveScreenEndRequest,
+    ) -> LiveScreenResponse:
+        item = await (
+            self.repository
+            .get_live_session(
+                session_id=session_id
+            )
+        )
+
+        if item is None:
+            raise LiveMonitoringNotFoundError(
+                "Live screen session not found."
+            )
+
+        device = await self.devices.get(
+            device_id=item.device_id
+        )
+
+        if device is None:
+            raise LiveMonitoringNotFoundError(
+                "Desktop agent device not found."
+            )
+
+        is_device_owner = (
+            device.user_id
+            == access.actor_user_id
+        )
+
+        is_requester = (
+            item.requested_by_user_id
+            == access.actor_user_id
+        )
+
+        if (
+            not is_device_owner
+            and not is_requester
+            and not access.can_manage_settings
+        ):
+            raise LiveMonitoringPermissionError(
+                "You cannot end this live-screen "
+                "session."
+            )
+
+        if item.status in {
+            LIVE_SESSION_STATUS_DENIED,
+            LIVE_SESSION_STATUS_ENDED,
+            LIVE_SESSION_STATUS_EXPIRED,
+        }:
+            return self._live_response(
+                item
+            )
+
+        item.status = (
+            LIVE_SESSION_STATUS_ENDED
+        )
+
+        item.ended_at = (
+            self._now()
+        )
+
+        item.end_reason = (
+            payload.reason
+        )
+
+        return self._live_response(
+            await (
+                self.repository
+                .refresh_live_session(
+                    item
+                )
+            )
+        )
+
+    async def get_live_screen(
+        self,
+        *,
+        access: LiveMonitoringAccess,
+        session_id: uuid.UUID,
+    ) -> LiveScreenResponse:
+        item = await (
+            self.repository
+            .get_live_session(
+                session_id=session_id
+            )
+        )
+
+        if item is None:
+            raise LiveMonitoringNotFoundError(
+                "Live screen session not found."
+            )
+
+        if not can_access_employee(
+            access=access,
+            employee_id=(
+                item.employee_id
+            ),
+        ):
+            raise LiveMonitoringPermissionError(
+                "Live screen session is outside "
+                "your permitted employee scope."
+            )
+
+        return self._live_response(
+            item
+        )
+
+    @staticmethod
+    def capabilities(
+    ) -> LiveMonitoringCapabilitiesResponse:
+        return (
+            LiveMonitoringCapabilitiesResponse(
+                screenshot_requests=True,
+                screenshot_requires_consent=True,
+                screenshot_visible_indicator=True,
+                live_screen_requests=True,
+                live_screen_requires_acceptance=True,
+                live_screen_visible_indicator=True,
+                live_screen_transport="webrtc",
+                captures_keystrokes=False,
+                captures_clipboard=False,
+                captures_passwords=False,
+                captures_mouse_coordinates=False,
+            )
+        )
+
+
+__all__ = [
+    "LiveMonitoringNotFoundError",
+    "LiveMonitoringPermissionError",
+    "LiveMonitoringService",
+]

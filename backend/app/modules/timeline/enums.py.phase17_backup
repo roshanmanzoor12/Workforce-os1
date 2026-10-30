@@ -1,0 +1,66 @@
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class TimelineEventType(StrEnum):
+    GOAL_CREATED = "goal.created"
+
+    NOTE_CREATED = "note.created"
+
+    KNOWLEDGE_CREATED = (
+        "knowledge.created"
+    )
+
+    MEETING_SCHEDULED = (
+        "meeting.scheduled"
+    )
+
+    ATTENDANCE_CHECK_IN = (
+        "attendance.check_in"
+    )
+
+    ATTENDANCE_CHECK_OUT = (
+        "attendance.check_out"
+    )
+
+    ATTENDANCE_BREAK_START = (
+        "attendance.break_start"
+    )
+
+    ATTENDANCE_BREAK_END = (
+        "attendance.break_end"
+    )
+
+
+class TimelineEntityType(StrEnum):
+    GOAL = "goal"
+
+    NOTE = "note"
+
+    KNOWLEDGE = "knowledge"
+
+    MEETING = "meeting"
+
+    ATTENDANCE_EVENT = (
+        "attendance_event"
+    )
+
+
+class TimelineSourceKey(StrEnum):
+    GOALS = "goals"
+
+    NOTES = "notes"
+
+    KNOWLEDGE = "knowledge"
+
+    MEETINGS = "meetings"
+
+    ATTENDANCE = "attendance"
+
+
+__all__ = [
+    "TimelineEventType",
+    "TimelineEntityType",
+    "TimelineSourceKey",
+]

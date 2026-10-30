@@ -1,0 +1,238 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from fastapi import (
+    HTTPException,
+    status,
+)
+
+from app.modules.workspace_permissions.policy import (
+    WorkspacePermissionPolicy,
+)
+
+
+class WorkspacePermissionService:
+    def __init__(
+        self,
+        scope: object,
+    ) -> None:
+        self.scope = scope
+
+    @property
+    def role_key(
+        self,
+    ) -> str:
+        value = getattr(
+            self.scope,
+            "role_key",
+            None,
+        )
+
+        if not isinstance(
+            value,
+            str,
+        ):
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_403_FORBIDDEN
+                ),
+                detail=(
+                    "Workspace role "
+                    "is unavailable."
+                ),
+            )
+
+        normalized = value.strip().lower()
+
+        if not normalized:
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_403_FORBIDDEN
+                ),
+                detail=(
+                    "Workspace role "
+                    "is unavailable."
+                ),
+            )
+
+        return normalized
+
+    def list(
+        self,
+    ) -> list[str]:
+        return sorted(
+            WorkspacePermissionPolicy
+            .permissions_for_role(
+                self.role_key
+            )
+        )
+
+    def list_permissions(
+        self,
+    ) -> list[str]:
+        return self.list()
+
+    def has(
+        self,
+        permission: str,
+    ) -> bool:
+        normalized_permission = (
+            permission.strip()
+        )
+
+        if not normalized_permission:
+            return False
+
+        return (
+            WorkspacePermissionPolicy
+            .allows(
+                role_key=self.role_key,
+                permission=(
+                    normalized_permission
+                ),
+            )
+        )
+
+    def has_permission(
+        self,
+        permission: str,
+    ) -> bool:
+        return self.has(
+            permission
+        )
+
+    def check_many(
+        self,
+        permissions: Iterable[str],
+    ) -> dict[str, bool]:
+        return {
+            permission: self.has(
+                permission
+            )
+            for permission in permissions
+        }
+
+    def require(
+        self,
+        permission: str,
+    ) -> None:
+        if self.has(
+            permission
+        ):
+            return
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_403_FORBIDDEN
+            ),
+            detail=(
+                "Workspace permission "
+                "required: "
+                f"{permission}"
+            ),
+        )
+
+    def all(
+        self,
+        permissions: (
+            set[str]
+            | frozenset[str]
+            | list[str]
+            | tuple[str, ...]
+        ),
+    ) -> bool:
+        normalized_permissions = {
+            permission.strip()
+            for permission in permissions
+            if permission.strip()
+        }
+
+        return (
+            WorkspacePermissionPolicy
+            .allows_all(
+                role_key=self.role_key,
+                permissions=(
+                    normalized_permissions
+                ),
+            )
+        )
+
+    def any(
+        self,
+        permissions: (
+            set[str]
+            | frozenset[str]
+            | list[str]
+            | tuple[str, ...]
+        ),
+    ) -> bool:
+        normalized_permissions = {
+            permission.strip()
+            for permission in permissions
+            if permission.strip()
+        }
+
+        return (
+            WorkspacePermissionPolicy
+            .allows_any(
+                role_key=self.role_key,
+                permissions=(
+                    normalized_permissions
+                ),
+            )
+        )
+
+    def require_all(
+        self,
+        permissions: (
+            set[str]
+            | frozenset[str]
+            | list[str]
+            | tuple[str, ...]
+        ),
+    ) -> None:
+        if self.all(
+            permissions
+        ):
+            return
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_403_FORBIDDEN
+            ),
+            detail=(
+                "Required workspace "
+                "permissions are missing."
+            ),
+        )
+
+    def require_any(
+        self,
+        permissions: (
+            set[str]
+            | frozenset[str]
+            | list[str]
+            | tuple[str, ...]
+        ),
+    ) -> None:
+        if self.any(
+            permissions
+        ):
+            return
+
+        raise HTTPException(
+            status_code=(
+                status.HTTP_403_FORBIDDEN
+            ),
+            detail=(
+                "At least one required "
+                "workspace permission "
+                "is missing."
+            ),
+        )
+
+
+__all__ = [
+    "WorkspacePermissionService",
+]

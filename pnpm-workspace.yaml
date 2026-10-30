@@ -1,0 +1,5 @@
+packages:
+  - "apps/web"
+  - "apps/platform-admin"
+  - "apps/desktop"
+  - "packages/*"

@@ -1,0 +1,5 @@
+.avatar { display: inline-grid; position: relative; flex-shrink: 0; place-items: center; overflow: hidden; border-radius: inherit; background: inherit; color: inherit; font: inherit; vertical-align: middle; isolation: isolate; }
+.avatar > img { position: relative !important; display: block; width: 100% !important; height: 100% !important; inset: auto !important; object-fit: cover; border-radius: inherit; }
+.animated { animation: avatarBreathe 7s ease-in-out infinite; transform-origin: center 75%; }
+@keyframes avatarBreathe { 0%, 100% { transform: scale(1.005); } 50% { transform: scale(1.045) translateY(-1%); } }
+@media (prefers-reduced-motion: reduce) { .animated { animation: none; } }

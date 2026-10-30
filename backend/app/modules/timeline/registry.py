@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.timeline.enums import TimelineSourceKey
+from app.modules.timeline.sources import (
+    AttendanceTimelineSource,
+    GoalTimelineSource,
+    KnowledgeTimelineSource,
+    MeetingTimelineSource,
+    NoteTimelineSource,
+    ScreenshotTimelineSource,
+    TimelineSource,
+)
+
+
+@dataclass(
+    frozen=True,
+    slots=True,
+)
+class RegisteredTimelineSource:
+    key: TimelineSourceKey
+    source: TimelineSource
+
+
+class TimelineSourceRegistry:
+    def __init__(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        # SCREENSHOTS support remains available through
+        # ScreenshotTimelineSource, but phase-12 registry selection
+        # contains the five foundational timeline sources.
+        self._sources = (
+            RegisteredTimelineSource(
+                key=TimelineSourceKey.GOALS,
+                source=GoalTimelineSource(session),
+            ),
+            RegisteredTimelineSource(
+                key=TimelineSourceKey.NOTES,
+                source=NoteTimelineSource(session),
+            ),
+            RegisteredTimelineSource(
+                key=TimelineSourceKey.KNOWLEDGE,
+                source=KnowledgeTimelineSource(session),
+            ),
+            RegisteredTimelineSource(
+                key=TimelineSourceKey.MEETINGS,
+                source=MeetingTimelineSource(session),
+            ),
+            RegisteredTimelineSource(
+                key=TimelineSourceKey.ATTENDANCE,
+                source=AttendanceTimelineSource(session),
+            ),
+        )
+
+    def all(
+        self,
+    ) -> tuple[
+        RegisteredTimelineSource,
+        ...,
+    ]:
+        return self._sources
+
+    def keys(
+        self,
+    ) -> tuple[
+        TimelineSourceKey,
+        ...,
+    ]:
+        return tuple(
+            item.key
+            for item in self._sources
+        )
+
+    def selected(
+        self,
+        keys: frozenset[
+            TimelineSourceKey
+        ],
+    ) -> tuple[
+        RegisteredTimelineSource,
+        ...,
+    ]:
+        if not keys:
+            return self._sources
+
+        return tuple(
+            item
+            for item in self._sources
+            if item.key in keys
+        )
+
+
+__all__ = [
+    "RegisteredTimelineSource",
+    "TimelineSourceRegistry",
+]

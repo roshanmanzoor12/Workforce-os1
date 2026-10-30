@@ -1,0 +1,121 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: workforce-os-postgres-1
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: workforce_control
+
+    ports:
+      - "5434:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U postgres -d workforce_control"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+    networks:
+      - workforce_network
+
+
+  redis:
+    image: redis:7-alpine
+    container_name: workforce-os-redis-1
+    restart: unless-stopped
+
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes"
+      ]
+
+    ports:
+      - "6381:6379"
+
+    volumes:
+      - redis_data:/data
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+
+    networks:
+      - workforce_network
+
+
+  minio:
+    image: minio/minio:latest
+    container_name: workforce-os-minio-1
+    restart: unless-stopped
+
+    command:
+      server /data
+      --console-address ":9001"
+
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+    volumes:
+      - minio_data:/data
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:9000/minio/health/live"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+    networks:
+      - workforce_network
+
+
+volumes:
+  postgres_data:
+    name: workforce-os_postgres_data
+
+  redis_data:
+    name: workforce-os_redis_data
+
+  minio_data:
+    name: workforce-os_minio_data
+
+
+networks:
+  workforce_network:
+    name: workforce-os-network
+    driver: bridge

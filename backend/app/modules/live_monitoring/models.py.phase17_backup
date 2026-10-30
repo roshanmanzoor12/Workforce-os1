@@ -1,0 +1,358 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+)
+
+from app.db.base import Base
+
+
+SCREENSHOT_STATUS_PENDING = "pending"
+SCREENSHOT_STATUS_COMPLETED = "completed"
+SCREENSHOT_STATUS_DENIED = "denied"
+SCREENSHOT_STATUS_EXPIRED = "expired"
+
+
+LIVE_SESSION_STATUS_REQUESTED = "requested"
+LIVE_SESSION_STATUS_ACCEPTED = "accepted"
+LIVE_SESSION_STATUS_ACTIVE = "active"
+LIVE_SESSION_STATUS_DENIED = "denied"
+LIVE_SESSION_STATUS_ENDED = "ended"
+LIVE_SESSION_STATUS_EXPIRED = "expired"
+
+
+class ScreenshotCaptureRequest(Base):
+    __tablename__ = (
+        "screenshot_capture_requests"
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_screenshot_capture_requests_device",
+            "device_id",
+            "requested_at",
+        ),
+        Index(
+            "ix_screenshot_capture_requests_employee",
+            "employee_id",
+            "requested_at",
+        ),
+        Index(
+            "ix_screenshot_capture_requests_status",
+            "status",
+            "expires_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=False,
+    )
+
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=False,
+    )
+
+    requested_by_user_id: Mapped[
+        uuid.UUID
+    ] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=SCREENSHOT_STATUS_PENDING,
+        server_default=SCREENSHOT_STATUS_PENDING,
+    )
+
+    reason: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    visible_indicator_required: Mapped[
+        bool
+    ] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+
+    consent_required: Mapped[
+        bool
+    ] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+
+    consent_confirmed_at: Mapped[
+        datetime | None
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    requested_at: Mapped[
+        datetime
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    expires_at: Mapped[
+        datetime
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    completed_at: Mapped[
+        datetime | None
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    storage_object_key: Mapped[
+        str | None
+    ] = mapped_column(
+        String(1024),
+        nullable=True,
+    )
+
+    sha256: Mapped[
+        str | None
+    ] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    width: Mapped[
+        int | None
+    ] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    height: Mapped[
+        int | None
+    ] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    metadata_json: Mapped[
+        dict
+    ] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    created_at: Mapped[
+        datetime
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class LiveScreenSession(Base):
+    __tablename__ = (
+        "live_screen_sessions"
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_live_screen_sessions_device",
+            "device_id",
+            "created_at",
+        ),
+        Index(
+            "ix_live_screen_sessions_employee",
+            "employee_id",
+            "created_at",
+        ),
+        Index(
+            "ix_live_screen_sessions_status",
+            "status",
+            "expires_at",
+        ),
+    )
+
+    id: Mapped[
+        uuid.UUID
+    ] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    device_id: Mapped[
+        uuid.UUID
+    ] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=False,
+    )
+
+    employee_id: Mapped[
+        uuid.UUID
+    ] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=False,
+    )
+
+    requested_by_user_id: Mapped[
+        uuid.UUID
+    ] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=False,
+    )
+
+    status: Mapped[
+        str
+    ] = mapped_column(
+        String(32),
+        nullable=False,
+        default=LIVE_SESSION_STATUS_REQUESTED,
+        server_default=LIVE_SESSION_STATUS_REQUESTED,
+    )
+
+    reason: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    consent_required: Mapped[
+        bool
+    ] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+
+    visible_indicator_required: Mapped[
+        bool
+    ] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+
+    accepted_at: Mapped[
+        datetime | None
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    started_at: Mapped[
+        datetime | None
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    ended_at: Mapped[
+        datetime | None
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    expires_at: Mapped[
+        datetime
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    transport: Mapped[
+        str
+    ] = mapped_column(
+        String(50),
+        nullable=False,
+        default="webrtc",
+        server_default="webrtc",
+    )
+
+    session_channel: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    end_reason: Mapped[
+        str | None
+    ] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    metadata_json: Mapped[
+        dict
+    ] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    created_at: Mapped[
+        datetime
+    ] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+__all__ = [
+    "SCREENSHOT_STATUS_PENDING",
+    "SCREENSHOT_STATUS_COMPLETED",
+    "SCREENSHOT_STATUS_DENIED",
+    "SCREENSHOT_STATUS_EXPIRED",
+    "LIVE_SESSION_STATUS_REQUESTED",
+    "LIVE_SESSION_STATUS_ACCEPTED",
+    "LIVE_SESSION_STATUS_ACTIVE",
+    "LIVE_SESSION_STATUS_DENIED",
+    "LIVE_SESSION_STATUS_ENDED",
+    "LIVE_SESSION_STATUS_EXPIRED",
+    "ScreenshotCaptureRequest",
+    "LiveScreenSession",
+]

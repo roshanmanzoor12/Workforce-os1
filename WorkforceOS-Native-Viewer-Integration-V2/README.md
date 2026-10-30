@@ -1,0 +1,1 @@
+Compatible viewer V2 for existing SingleViewer UI. Run Apply.ps1 for dry run, -Apply for patch, -Rollback for restore. Only shows native frames for an active native session when gateway is deployed and frames are published. Does NOT implement native Windows capture or change session request flow.

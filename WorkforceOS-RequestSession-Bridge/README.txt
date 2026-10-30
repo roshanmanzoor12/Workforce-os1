@@ -1,0 +1,2 @@
+UI bridge only: connects main Request Session button to existing browser-share authenticated request inbox. Employee must be signed into same workspace on Live Screen page and click Accept & Choose Screen. Saved consent cannot automatically capture a browser screen. Backend single worker + STUN only. Native Windows Companion still disconnected.
+Install: PowerShell -File Apply.ps1 (dry run), -Apply, -Rollback.

@@ -1,0 +1,1 @@
+Workspace-wide employee incoming screen-share popup. Employee must explicitly choose screen; monitoring permission cannot bypass browser getDisplayMedia. In-memory signaling in backend requires single backend worker. Apply.ps1 -Rollback restores.

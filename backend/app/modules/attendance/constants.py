@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+
+# =========================================================
+# ATTENDANCE STATUS
+# =========================================================
+
+ATTENDANCE_STATUS_PRESENT = "present"
+ATTENDANCE_STATUS_ABSENT = "absent"
+ATTENDANCE_STATUS_LATE = "late"
+ATTENDANCE_STATUS_ON_LEAVE = "on_leave"
+ATTENDANCE_STATUS_HALF_DAY = "half_day"
+
+ATTENDANCE_STATUSES = (
+    ATTENDANCE_STATUS_PRESENT,
+    ATTENDANCE_STATUS_ABSENT,
+    ATTENDANCE_STATUS_LATE,
+    ATTENDANCE_STATUS_ON_LEAVE,
+    ATTENDANCE_STATUS_HALF_DAY,
+)
+
+
+# =========================================================
+# ATTENDANCE SOURCE
+# =========================================================
+
+ATTENDANCE_SOURCE_MANUAL = "manual"
+ATTENDANCE_SOURCE_ACTIVITY = "activity"
+ATTENDANCE_SOURCE_SYSTEM = "system"
+
+ATTENDANCE_SOURCES = (
+    ATTENDANCE_SOURCE_MANUAL,
+    ATTENDANCE_SOURCE_ACTIVITY,
+    ATTENDANCE_SOURCE_SYSTEM,
+)
+
+
+# =========================================================
+# EVENT TYPES
+# =========================================================
+
+ATTENDANCE_EVENT_CHECK_IN = "check_in"
+ATTENDANCE_EVENT_CHECK_OUT = "check_out"
+ATTENDANCE_EVENT_BREAK_START = "break_start"
+ATTENDANCE_EVENT_BREAK_END = "break_end"
+
+ATTENDANCE_EVENT_TYPES = (
+    ATTENDANCE_EVENT_CHECK_IN,
+    ATTENDANCE_EVENT_CHECK_OUT,
+    ATTENDANCE_EVENT_BREAK_START,
+    ATTENDANCE_EVENT_BREAK_END,
+)
+
+
+__all__ = [
+    "ATTENDANCE_STATUS_PRESENT",
+    "ATTENDANCE_STATUS_ABSENT",
+    "ATTENDANCE_STATUS_LATE",
+    "ATTENDANCE_STATUS_ON_LEAVE",
+    "ATTENDANCE_STATUS_HALF_DAY",
+    "ATTENDANCE_STATUSES",
+    "ATTENDANCE_SOURCE_MANUAL",
+    "ATTENDANCE_SOURCE_ACTIVITY",
+    "ATTENDANCE_SOURCE_SYSTEM",
+    "ATTENDANCE_SOURCES",
+    "ATTENDANCE_EVENT_CHECK_IN",
+    "ATTENDANCE_EVENT_CHECK_OUT",
+    "ATTENDANCE_EVENT_BREAK_START",
+    "ATTENDANCE_EVENT_BREAK_END",
+    "ATTENDANCE_EVENT_TYPES",
+]

@@ -1,0 +1,197 @@
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+from typing import Annotated, AsyncIterator
+
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_control_db
+from app.db.tenant_context import (
+    AuthorizedTenantContext,
+    authorized_tenant_session,
+)
+from app.modules.auth.models import User
+from app.modules.auth.permissions import get_current_verified_user
+
+
+# =========================================================
+# FASTAPI DEPENDENCY TYPES
+# =========================================================
+
+
+ControlDB = Annotated[
+    AsyncSession,
+    Depends(get_control_db),
+]
+
+
+VerifiedUser = Annotated[
+    User,
+    Depends(get_current_verified_user),
+]
+
+
+# =========================================================
+# TENANT REQUEST SCOPE
+# =========================================================
+
+
+@dataclass(slots=True)
+class TenantRequestScope:
+    """
+    Authorized tenant scope for one FastAPI request.
+
+    Contains:
+
+    - trusted tenant routing context
+    - tenant-scoped AsyncSession
+
+    The session is already authorized against:
+
+        authenticated global user
+            ↓
+        active workspace membership
+            ↓
+        active workspace
+            ↓
+        READY tenant registry
+            ↓
+        trusted tenant database
+            ↓
+        verified physical tenant identity
+
+    A route must never replace database_name with client input.
+    """
+
+    context: AuthorizedTenantContext
+    session: AsyncSession
+
+    @property
+    def workspace_id(
+        self,
+    ) -> uuid.UUID:
+        return self.context.workspace_id
+
+    @property
+    def user_id(
+        self,
+    ) -> uuid.UUID:
+        return self.context.user_id
+
+    @property
+    def membership_id(
+        self,
+    ) -> uuid.UUID:
+        return self.context.membership_id
+
+    @property
+    def role_key(
+        self,
+    ) -> str:
+        return self.context.role_key
+
+    @property
+    def schema_version(
+        self,
+    ) -> str | None:
+        return self.context.schema_version
+
+
+# =========================================================
+# AUTHORIZED TENANT DEPENDENCY
+# =========================================================
+
+
+async def get_tenant_scope(
+    workspace_id: uuid.UUID,
+    control_session: ControlDB,
+    current_user: VerifiedUser,
+) -> AsyncIterator[TenantRequestScope]:
+    """
+    Resolve an authorized tenant session for a FastAPI route.
+
+    FastAPI supplies workspace_id from the route path.
+
+    Example route:
+
+        /workspaces/{workspace_id}/employees
+
+    Security rules:
+
+    - workspace_id identifies the logical workspace only
+    - current_user comes from verified authentication
+    - membership is checked in workforce_control
+    - database_name is resolved internally
+    - the physical tenant identity is verified
+    - clients cannot supply database_name or a database URL
+    """
+
+    async with authorized_tenant_session(
+        control_session,
+        workspace_id=workspace_id,
+        user_id=current_user.id,
+    ) as (
+        context,
+        tenant_db,
+    ):
+        yield TenantRequestScope(
+            context=context,
+            session=tenant_db,
+        )
+
+
+# =========================================================
+# ANNOTATED DEPENDENCY
+# =========================================================
+
+
+TenantScope = Annotated[
+    TenantRequestScope,
+    Depends(get_tenant_scope),
+]
+
+
+# =========================================================
+# TENANT SESSION-ONLY DEPENDENCY
+# =========================================================
+
+
+async def get_tenant_db(
+    scope: TenantScope,
+) -> AsyncSession:
+    """
+    Return only the authorized tenant AsyncSession.
+
+    Prefer TenantScope when a service also needs:
+
+    - workspace_id
+    - membership_id
+    - role_key
+    - schema_version
+
+    Use this dependency only where the session itself is enough.
+    """
+
+    return scope.session
+
+
+TenantDB = Annotated[
+    AsyncSession,
+    Depends(get_tenant_db),
+]
+
+
+# =========================================================
+# PUBLIC EXPORTS
+# =========================================================
+
+
+__all__ = [
+    "TenantRequestScope",
+    "TenantScope",
+    "TenantDB",
+    "get_tenant_scope",
+    "get_tenant_db",
+]

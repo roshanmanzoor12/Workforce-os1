@@ -1,0 +1,12 @@
+[project]
+name = "workforce-os-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.alembic]
+script_location = "%(here)s/migrations/control"

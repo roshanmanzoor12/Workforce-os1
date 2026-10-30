@@ -1,0 +1,9 @@
+{
+  "name": "com.workforceos.website_tracking",
+  "description": "WorkforceOS disclosed website tracking native messaging host",
+  "path": "C:\\workforce-os\\artifacts\\agent\\win-x64\\WorkforceOS.Agent.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACE_WITH_WORKFORCEOS_EXTENSION_ID/"
+  ]
+}

@@ -1,0 +1,1 @@
+"""Personal friends and conversation metadata."""

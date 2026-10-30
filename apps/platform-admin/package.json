@@ -1,0 +1,1 @@
+{"name":"@workforce-os/platform-admin","private":true,"scripts":{"dev":"next dev -p 3001","build":"next build"},"dependencies":{"next":"^15.4.0","react":"^19.1.0","react-dom":"^19.1.0"}}

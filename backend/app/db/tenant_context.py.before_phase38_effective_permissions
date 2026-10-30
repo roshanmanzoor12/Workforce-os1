@@ -1,0 +1,371 @@
+from __future__ import annotations
+
+import uuid
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import AsyncIterator
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import ResourceNotFound
+from app.db.tenant import (
+    tenant_session,
+    validate_tenant_cluster_key,
+    validate_tenant_database_name,
+)
+from app.db.tenant_models import TenantMetadata
+from app.modules.workspaces.models import (
+    TENANT_STATUS_READY,
+    TenantDatabaseRegistry,
+    Workspace,
+    WorkspaceMembership,
+)
+from app.modules.workspaces.repository import WorkspaceRepository
+
+
+# =========================================================
+# ERRORS
+# =========================================================
+
+
+class TenantContextError(RuntimeError):
+    """
+    Base error for trusted tenant routing failures.
+    """
+
+    pass
+
+
+class TenantUnavailableError(TenantContextError):
+    """
+    Raised when a workspace is authorized but its tenant database
+    is not currently ready for routing.
+    """
+
+    pass
+
+
+class TenantIdentityMismatchError(TenantContextError):
+    """
+    Raised when the physical tenant database identity does not
+    match the trusted control-plane workspace/registry identity.
+
+    This is a security-sensitive condition.
+    """
+
+    pass
+
+
+# =========================================================
+# AUTHORIZED TENANT CONTEXT
+# =========================================================
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedTenantContext:
+    """
+    Trusted routing information resolved from workforce_control.
+
+    database_name and cluster_key must never come directly from a
+    client request.
+    """
+
+    workspace_id: uuid.UUID
+    user_id: uuid.UUID
+    membership_id: uuid.UUID
+    role_key: str
+    database_name: str
+    cluster_key: str
+    schema_version: str | None
+
+
+# =========================================================
+# CONTROL-PLANE RESOLUTION
+# =========================================================
+
+
+async def resolve_authorized_tenant_context(
+    control_session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> AuthorizedTenantContext:
+    """
+    Resolve a trusted tenant routing context.
+
+    Request security flow:
+
+        authenticated global user
+            ↓
+        workspace_id supplied by request
+            ↓
+        active membership checked in workforce_control
+            ↓
+        workspace must be active
+            ↓
+        tenant registry resolved internally
+            ↓
+        tenant registry must be ready
+            ↓
+        database identity validated
+            ↓
+        trusted tenant context returned
+
+    Important:
+
+    The caller never supplies:
+
+        database_name
+        database_url
+        cluster credentials
+    """
+
+    repository = WorkspaceRepository(
+        control_session
+    )
+
+    context = await repository.get_authorized_workspace(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    if context is None:
+        # Deliberately avoid revealing whether the workspace exists
+        # when the user does not have an active membership.
+        raise ResourceNotFound(
+            "Workspace was not found."
+        )
+
+    workspace, membership, registry = context
+
+    if registry is None:
+        raise TenantUnavailableError(
+            "Workspace tenant database is not provisioned."
+        )
+
+    if registry.status != TENANT_STATUS_READY:
+        raise TenantUnavailableError(
+            "Workspace tenant database is not ready."
+        )
+
+    database_name = validate_tenant_database_name(
+        registry.database_name
+    )
+
+    cluster_key = validate_tenant_cluster_key(
+        registry.cluster_key
+    )
+
+    return AuthorizedTenantContext(
+        workspace_id=workspace.id,
+        user_id=user_id,
+        membership_id=membership.id,
+        role_key=membership.role_key,
+        database_name=database_name,
+        cluster_key=cluster_key,
+        schema_version=registry.schema_version,
+    )
+
+
+# =========================================================
+# PHYSICAL TENANT IDENTITY VERIFICATION
+# =========================================================
+
+
+async def verify_tenant_identity(
+    session: AsyncSession,
+    *,
+    context: AuthorizedTenantContext,
+) -> TenantMetadata:
+    """
+    Verify that the physical tenant database belongs to exactly
+    the workspace resolved from workforce_control.
+
+    This prevents a configuration or routing mistake from silently
+    sending one workspace to another workspace's database.
+    """
+
+    result = await session.execute(
+        select(
+            TenantMetadata
+        )
+        .limit(2)
+    )
+
+    rows = list(
+        result.scalars().all()
+    )
+
+    if len(rows) != 1:
+        raise TenantIdentityMismatchError(
+            "Tenant database identity metadata is invalid."
+        )
+
+    metadata = rows[0]
+
+    if metadata.workspace_id != context.workspace_id:
+        raise TenantIdentityMismatchError(
+            "Tenant database workspace identity mismatch."
+        )
+
+    if not metadata.is_active:
+        raise TenantUnavailableError(
+            "Tenant database is inactive."
+        )
+
+    if (
+        context.schema_version is not None
+        and metadata.schema_version
+        != context.schema_version
+    ):
+        raise TenantIdentityMismatchError(
+            "Tenant schema version does not match control registry."
+        )
+
+    return metadata
+
+
+# =========================================================
+# AUTHORIZED TENANT SESSION
+# =========================================================
+
+
+@asynccontextmanager
+async def authorized_tenant_session(
+    control_session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> AsyncIterator[
+    tuple[
+        AuthorizedTenantContext,
+        AsyncSession,
+    ]
+]:
+    """
+    Open an authenticated and authorized tenant database session.
+
+    This is the preferred tenant-routing entry point for application
+    services.
+
+    Security sequence:
+
+        global authentication
+            ↓
+        active workspace membership
+            ↓
+        active workspace
+            ↓
+        READY tenant registry
+            ↓
+        trusted database name validation
+            ↓
+        physical tenant connection
+            ↓
+        physical tenant identity verification
+            ↓
+        caller receives tenant session
+
+    A client cannot select an arbitrary database.
+    """
+
+    context = await resolve_authorized_tenant_context(
+        control_session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    async with tenant_session(
+        context.database_name,
+        cluster_key=context.cluster_key,
+    ) as session:
+        await verify_tenant_identity(
+            session,
+            context=context,
+        )
+
+        yield (
+            context,
+            session,
+        )
+
+
+# =========================================================
+# CONTEXT WITH CONTROL OBJECTS
+# =========================================================
+
+
+async def get_authorized_control_objects(
+    control_session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> tuple[
+    Workspace,
+    WorkspaceMembership,
+    TenantDatabaseRegistry,
+]:
+    """
+    Resolve the authorized control-plane objects when a service needs
+    both workspace membership information and tenant registry details.
+
+    This helper still enforces READY tenant state.
+    """
+
+    repository = WorkspaceRepository(
+        control_session
+    )
+
+    context = await repository.get_authorized_workspace(
+        workspace_id=workspace_id,
+        user_id=user_id,
+    )
+
+    if context is None:
+        raise ResourceNotFound(
+            "Workspace was not found."
+        )
+
+    workspace, membership, registry = context
+
+    if registry is None:
+        raise TenantUnavailableError(
+            "Workspace tenant database is not provisioned."
+        )
+
+    if registry.status != TENANT_STATUS_READY:
+        raise TenantUnavailableError(
+            "Workspace tenant database is not ready."
+        )
+
+    validate_tenant_database_name(
+        registry.database_name
+    )
+
+    validate_tenant_cluster_key(
+        registry.cluster_key
+    )
+
+    return (
+        workspace,
+        membership,
+        registry,
+    )
+
+
+# =========================================================
+# PUBLIC EXPORTS
+# =========================================================
+
+
+__all__ = [
+    "AuthorizedTenantContext",
+    "TenantContextError",
+    "TenantUnavailableError",
+    "TenantIdentityMismatchError",
+    "resolve_authorized_tenant_context",
+    "verify_tenant_identity",
+    "authorized_tenant_session",
+    "get_authorized_control_objects",
+]

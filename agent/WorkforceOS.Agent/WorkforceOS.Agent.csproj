@@ -1,0 +1,89 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+
+    <OutputType>Exe</OutputType>
+
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <RootNamespace>WorkforceOS.Agent</RootNamespace>
+    <AssemblyName>WorkforceOS.Agent</AssemblyName>
+
+    <LangVersion>latest</LangVersion>
+
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+
+    <InvariantGlobalization>false</InvariantGlobalization>
+
+    <Platforms>AnyCPU</Platforms>
+
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+    <SelfContained>false</SelfContained>
+
+    <PublishSingleFile>false</PublishSingleFile>
+
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <DebugType>portable</DebugType>
+
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+
+  <!-- =================================================== -->
+  <!-- PACKAGE REFERENCES                                  -->
+  <!-- =================================================== -->
+
+  <ItemGroup>
+
+    <PackageReference
+      Include="Microsoft.Extensions.Hosting"
+      Version="8.0.1"
+    />
+
+    <PackageReference
+      Include="Microsoft.Extensions.Hosting.WindowsServices"
+      Version="8.0.1"
+    />
+
+    <PackageReference
+      Include="Microsoft.Extensions.Http"
+      Version="8.0.1"
+    />
+
+    <PackageReference
+      Include="Microsoft.Extensions.Options.ConfigurationExtensions"
+      Version="8.0.0"
+    />
+
+  </ItemGroup>
+
+
+  <!-- =================================================== -->
+  <!-- APPLICATION SETTINGS                                -->
+  <!-- =================================================== -->
+
+  <ItemGroup>
+
+    <None
+      Update="appsettings.json"
+    >
+      <CopyToOutputDirectory>
+        PreserveNewest
+      </CopyToOutputDirectory>
+    </None>
+
+    <None
+      Update="appsettings.Development.json"
+    >
+      <CopyToOutputDirectory>
+        PreserveNewest
+      </CopyToOutputDirectory>
+    </None>
+
+  </ItemGroup>
+
+</Project>

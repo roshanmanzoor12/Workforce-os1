@@ -1,0 +1,379 @@
+from __future__ import annotations
+
+from fastapi import (
+    APIRouter,
+    Depends,
+)
+
+from app.modules.ai_productivity.router import (
+    router as ai_productivity_router,
+)
+from app.modules.reports.router import (
+    router as reports_router,
+)
+from app.modules.analytics.router import (
+    router as analytics_router,
+)
+from app.modules.attendance.router import (
+    router as attendance_router,
+)
+from app.modules.audit_log.router import (
+    router as audit_log_router,
+)
+from app.modules.channels.realtime_router import (
+    router as channel_realtime_router,
+)
+from app.modules.desktop_agent.router import (
+    router as desktop_agent_router,
+)
+from app.modules.employees.router import (
+    router as employees_router,
+)
+from app.modules.goals.router import (
+    router as goals_router,
+)
+from app.modules.holidays.router import (
+    router as holidays_router,
+)
+from app.modules.knowledge.router import (
+    router as knowledge_router,
+)
+from app.modules.leave.router import (
+    router as leave_router,
+)
+from app.modules.leave.integration_router import (
+    router as leave_integration_router,
+)
+from app.modules.live_monitoring.router import (
+    router as live_monitoring_router,
+)
+from app.modules.meetings.self_router import (
+    router as meetings_self_router,
+)
+from app.modules.meetings.router import (
+    router as meetings_router,
+)
+from app.modules.monitoring_admin.policy_guard import (
+    require_live_monitoring_policy,
+)
+from app.modules.monitoring_admin.router import (
+    router as monitoring_admin_router,
+)
+from app.modules.monitoring_control.router import (
+    router as monitoring_control_router,
+)
+from app.modules.notes.router import (
+    router as notes_router,
+)
+
+from app.modules.productivity_insights.router import (
+    router as productivity_insights_router,
+)
+from app.modules.shifts.router import (
+    router as shifts_router,
+)
+from app.modules.timeline.router import (
+    router as timeline_router,
+)
+from app.modules.workforce_intelligence.router import (
+    router as workforce_intelligence_router,
+)
+from app.modules.workspace_permissions.router import (
+    router as workspace_permissions_router,
+)
+from app.modules.workspace_search.router import (
+    router as workspace_search_router,
+)
+
+
+from app.modules.payroll.router import router as payroll_router
+
+from app.modules.payroll.payslip_router import router as payroll_payslip_router
+
+from app.modules.devices.readiness_router import (
+    DEVICE_READINESS_SCOPE_STATE_KEY,
+    router as device_readiness_router,
+)
+
+from app.db.tenant_dependency import (
+    TenantScope,
+)
+
+from fastapi import Request
+
+from app.modules.employee_monitoring_detail.router import (
+    router as employee_monitoring_detail_router,
+)
+
+router = APIRouter()
+
+# =========================================================
+# PHASE 13.2 — DEVICE READINESS SCOPE BINDER
+# =========================================================
+
+
+async def bind_device_readiness_scope(
+    request: Request,
+    scope: TenantScope,
+) -> None:
+    setattr(
+        request.state,
+        DEVICE_READINESS_SCOPE_STATE_KEY,
+        scope,
+    )
+
+
+
+
+# =========================================================
+# EMPLOYEES / ATTENDANCE / PERMISSIONS
+# =========================================================
+
+
+router.include_router(
+    employees_router
+)
+
+router.include_router(
+    attendance_router
+)
+
+router.include_router(
+    workspace_permissions_router
+)
+
+router.include_router(
+    leave_router
+)
+
+router.include_router(
+    leave_integration_router
+)
+
+
+# =========================================================
+# PHASE 12.1 — SHIFTS / SCHEDULES / HOLIDAYS
+# =========================================================
+
+
+router.include_router(
+    shifts_router
+)
+
+router.include_router(
+    holidays_router
+)
+
+
+# =========================================================
+# MEETINGS
+# =========================================================
+
+
+router.include_router(
+    meetings_self_router
+)
+
+router.include_router(
+    meetings_router
+)
+
+
+# =========================================================
+# MONITORING CONTROL
+# =========================================================
+
+
+router.include_router(
+    monitoring_control_router
+)
+
+
+# =========================================================
+# PRODUCTIVITY WORKSPACE MODULES
+# =========================================================
+
+
+router.include_router(
+    goals_router
+)
+
+router.include_router(
+    notes_router
+)
+
+router.include_router(
+    knowledge_router
+)
+
+router.include_router(
+    ai_productivity_router
+)
+
+router.include_router(
+    timeline_router
+)
+
+
+# =========================================================
+# ANALYTICS
+# =========================================================
+
+
+router.include_router(
+    analytics_router
+)
+
+
+# =========================================================
+# PRODUCTIVITY INSIGHTS
+# =========================================================
+
+
+router.include_router(
+    productivity_insights_router
+)
+# =========================================================
+# PHASE 20 — REPORTS
+# =========================================================
+
+
+router.include_router(
+    reports_router
+)
+
+# =========================================================
+# NOTIFICATIONS
+# =========================================================
+
+
+
+
+
+# =========================================================
+# AUDIT LOG
+# =========================================================
+
+
+router.include_router(
+    audit_log_router
+)
+
+
+# =========================================================
+# WORKSPACE SEARCH
+# =========================================================
+
+
+router.include_router(
+    workspace_search_router
+)
+
+
+# =========================================================
+# WORKFORCE INTELLIGENCE
+# =========================================================
+
+
+router.include_router(
+    workforce_intelligence_router
+)
+
+
+# =========================================================
+# DESKTOP AGENT
+# =========================================================
+
+
+router.include_router(
+    desktop_agent_router
+)
+
+
+# =========================================================
+# LIVE MONITORING
+# =========================================================
+
+
+router.include_router(
+    live_monitoring_router,
+    dependencies=[
+        Depends(
+            require_live_monitoring_policy
+        )
+    ],
+)
+
+
+# =========================================================
+# VOICE CHANNELS / RTC
+# =========================================================
+
+
+
+# =========================================================
+# MONITORING ADMIN
+# =========================================================
+
+
+router.include_router(
+    monitoring_admin_router
+)
+
+
+# =========================================================
+# WORKSPACE CHANNEL REALTIME
+# =========================================================
+
+
+router.include_router(
+    channel_realtime_router
+)
+
+
+
+# =========================================================
+# PHASE 12.3 — PAYROLL
+# =========================================================
+
+router.include_router(
+    payroll_router
+)
+
+
+# =========================================================
+# PHASE 12.3 — PAYSLIPS
+# =========================================================
+
+router.include_router(
+    payroll_payslip_router
+)
+
+
+
+# =========================================================
+# PHASE 13.2 — DEVICE READINESS
+# =========================================================
+
+router.include_router(
+    device_readiness_router,
+    dependencies=[
+        Depends(
+            bind_device_readiness_scope
+        )
+    ],
+)
+
+
+
+# =========================================================
+# PHASE 15 — EMPLOYEE MONITORING DETAIL
+# =========================================================
+
+router.include_router(
+    employee_monitoring_detail_router
+)
+
+__all__ = [
+    "router",
+]

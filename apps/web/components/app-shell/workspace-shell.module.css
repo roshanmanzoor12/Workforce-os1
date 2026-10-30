@@ -1,0 +1,352 @@
+.shell {
+  display: flex;
+  min-height: 100dvh;
+  background: var(--color-app-background, #faf8f3);
+  color: var(--color-text, #303235);
+}
+
+.sidebar {
+  flex: 0 0 236px;
+  width: 236px;
+  min-width: 0;
+  background: var(--color-sidebar-background, #fbfaf7);
+  border-inline-end: 1px solid
+    var(--color-border, #e9e4da);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 100dvh;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  background: var(--color-header-background, #fffefa);
+}
+
+.headerContent {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.content {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: clamp(16px, 1.6vw, 24px);
+}
+
+/*
+ * The Notes page supplies its own content padding.
+ * Avoid stacking shell padding around it.
+ */
+.content:has(> .wn-page) {
+  padding: 0;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--color-border, #e9e4da);
+  border-radius: 8px;
+  background: var(--color-surface, #fffefa);
+  color: inherit;
+  cursor: pointer;
+}
+
+.iconButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+.iconButton:hover {
+  background: var(--color-surface-hover, #f5f2eb);
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--color-ink, #222426);
+  outline-offset: 3px;
+}
+
+.mobileMenuButton,
+.drawerHeader {
+  display: none;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  border: 0;
+  padding: 0;
+  background: rgb(15 23 42 / 42%);
+  cursor: pointer;
+}
+
+@media (min-width: 1600px) {
+  .sidebar {
+    flex-basis: 248px;
+    width: 248px;
+  }
+}
+
+/*
+ * This breakpoint matches WorkspaceShell's matchMedia.
+ * Keep the drawer and its open button synchronized.
+ */
+@media (max-width: 1023px) {
+  .sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 70;
+    width: min(290px, 88vw);
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-100%);
+    transition:
+      transform 180ms ease-out,
+      visibility 180ms;
+  }
+
+  .sidebar[data-open="true"] {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+
+  .drawerHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid
+      var(--color-border, #e9e4da);
+  }
+
+  .drawerHeader strong {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .mobileMenuButton {
+    display: inline-flex;
+    margin-inline-start: 12px;
+  }
+
+  .content {
+    padding: 14px;
+  }
+
+  .content:has(> .wn-page) {
+    padding: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .mobileMenuButton {
+    width: 34px;
+    height: 34px;
+    margin-inline-start: 8px;
+  }
+
+  .content {
+    padding: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
+.shell {
+  display: flex;
+  min-height: 100dvh;
+  background: var(--color-app-background, #faf8f3);
+  color: var(--color-text, #19232e);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  width: 264px;
+  height: 100dvh;
+  min-width: 0;
+  flex: 0 0 264px;
+  align-self: flex-start;
+  border-inline-end: 1px solid
+    var(--color-border, #e9e5dd);
+  background: var(--color-sidebar-background, #fcfbf8);
+}
+
+.main {
+  display: flex;
+  min-width: 0;
+  min-height: 100dvh;
+  flex: 1 1 0;
+  flex-direction: column;
+}
+
+.headerRow {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  min-width: 0;
+  flex-shrink: 0;
+  align-items: center;
+  background: var(--color-header-background, #fffefd);
+}
+
+.headerContent {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.content {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: clamp(16px, 1.4vw, 22px);
+}
+
+.content:has(> .wn-page) {
+  padding: 0;
+}
+
+.iconButton {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid
+    var(--color-border, #e9e5dd);
+  border-radius: 8px;
+  background: var(--color-surface, #fffefd);
+  color: inherit;
+  cursor: pointer;
+}
+
+.iconButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+.iconButton:hover {
+  background: var(--color-surface-hover, #f4f1eb);
+}
+
+.iconButton:focus-visible {
+  outline: 3px solid #ffc535;
+  outline-offset: 3px;
+}
+
+.mobileMenuButton,
+.drawerHeader {
+  display: none;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  padding: 0;
+  border: 0;
+  background: rgb(15 23 42 / 42%);
+  cursor: pointer;
+}
+
+@media (max-width: 1023px) {
+  .sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 70;
+    display: flex;
+    width: min(290px, 88vw);
+    height: 100dvh;
+    flex-direction: column;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-100%);
+    transition:
+      transform 180ms ease-out,
+      visibility 180ms;
+  }
+
+  .sidebar[data-open="true"] {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+
+  .drawerHeader {
+    display: flex;
+    min-height: 49px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 14px;
+    border-bottom: 1px solid
+      var(--color-border, #e9e5dd);
+  }
+
+  .drawerHeader strong {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .sidebar > aside {
+    height: auto;
+    min-height: 0;
+    flex: 1 1 0;
+  }
+
+  .mobileMenuButton {
+    display: inline-flex;
+    margin-inline-start: 12px;
+  }
+
+  .content {
+    padding: 14px;
+  }
+
+  .content:has(> .wn-page) {
+    padding: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .mobileMenuButton {
+    width: 34px;
+    height: 34px;
+    margin-inline-start: 8px;
+  }
+
+  .content {
+    padding: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}

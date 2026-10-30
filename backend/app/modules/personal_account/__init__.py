@@ -1,0 +1,1 @@
+"""Global personal account APIs; independent of workspace subscriptions."""

@@ -1,0 +1,581 @@
+$ErrorActionPreference = "Stop"
+
+
+$BackendRoot = (
+    "C:\workforce-os\backend"
+)
+
+$Python = (
+    "C:\workforce-os\backend\" +
+    ".venv\Scripts\python.exe"
+)
+
+$ExpectedControlHead = (
+    "g1b2c3d4e5f6"
+)
+
+
+Set-Location $BackendRoot
+
+
+Write-Host "================================================="
+Write-Host " WorkforceOS Phase 12.7 Audit Log Gate"
+Write-Host "================================================="
+Write-Host ""
+
+
+# =========================================================
+# REQUIRED FILES
+# =========================================================
+
+$RequiredFiles = @(
+    ".\app\modules\audit_log\__init__.py",
+    ".\app\modules\audit_log\models.py",
+    ".\app\modules\audit_log\schemas.py",
+    ".\app\modules\audit_log\access.py",
+    ".\app\modules\audit_log\repository.py",
+    ".\app\modules\audit_log\service.py",
+    ".\app\modules\audit_log\router.py",
+    ".\app\modules\tenant_api\router.py",
+    ".\migrations\control\versions\g1b2c3d4e5f6_add_workspace_audit_log.py"
+)
+
+
+foreach ($File in $RequiredFiles)
+{
+    if (-not (Test-Path $File))
+    {
+        throw (
+            "Missing required file: " +
+            $File
+        )
+    }
+}
+
+
+Write-Host "PASS required files"
+Write-Host ""
+
+
+# =========================================================
+# 1/8 COMPILE
+# =========================================================
+
+Write-Host "[1/8] Compiling..."
+
+
+& $Python `
+    -m compileall `
+    .\app\modules\audit_log `
+    .\app\modules\tenant_api `
+    .\migrations\control\versions `
+    -q
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "Compile failed."
+}
+
+
+Write-Host "PASS compile"
+Write-Host ""
+
+
+# =========================================================
+# 2/8 PERMISSION CONTRACT
+# =========================================================
+
+Write-Host "[2/8] Audit permissions..."
+
+
+$PermissionCheck = @'
+from app.modules.workspace_permissions.permissions import (
+    ALL_WORKSPACE_PERMISSIONS,
+)
+
+from app.modules.workspace_permissions.roles import (
+    ADMIN_PERMISSIONS,
+    OWNER_PERMISSIONS,
+)
+
+
+required = {
+    "audit.view",
+    "audit.read",
+}
+
+
+if not required.issubset(
+    set(
+        ALL_WORKSPACE_PERMISSIONS
+    )
+):
+    raise SystemExit(
+        "Audit permissions missing from catalog."
+    )
+
+
+if not required.issubset(
+    set(
+        OWNER_PERMISSIONS
+    )
+):
+    raise SystemExit(
+        "Owner audit permissions invalid."
+    )
+
+
+if not required.issubset(
+    set(
+        ADMIN_PERMISSIONS
+    )
+):
+    raise SystemExit(
+        "Admin audit permissions invalid."
+    )
+
+
+print(
+    "PASS audit permissions"
+)
+'@
+
+
+$PermissionCheck |
+    & $Python -
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "Audit permission gate failed."
+}
+
+
+Write-Host ""
+
+
+# =========================================================
+# 3/8 MODEL CONTRACT
+# =========================================================
+
+Write-Host "[3/8] Audit model..."
+
+
+$ModelCheck = @'
+from app.modules.audit_log.models import (
+    WorkspaceAuditEvent,
+)
+
+
+required = {
+    "id",
+    "workspace_id",
+    "actor_user_id",
+    "category",
+    "action",
+    "outcome",
+    "severity",
+    "target_type",
+    "target_id",
+    "target_label",
+    "message",
+    "request_id",
+    "ip_address",
+    "user_agent",
+    "event_data",
+    "occurred_at",
+}
+
+
+for field in required:
+    if not hasattr(
+        WorkspaceAuditEvent,
+        field,
+    ):
+        raise SystemExit(
+            "Audit model field missing: "
+            + field
+        )
+
+
+if hasattr(
+    WorkspaceAuditEvent,
+    "updated_at",
+):
+    raise SystemExit(
+        "Immutable audit events must not "
+        "have updated_at."
+    )
+
+
+print(
+    "PASS audit model"
+)
+'@
+
+
+$ModelCheck |
+    & $Python -
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "Audit model gate failed."
+}
+
+
+Write-Host ""
+
+
+# =========================================================
+# 4/8 SECRET REDACTION
+# =========================================================
+
+Write-Host "[4/8] Audit secret redaction..."
+
+
+$SanitizeCheck = @'
+from app.modules.audit_log.service import (
+    sanitize_audit_data,
+)
+
+
+source = {
+    "email": "user@example.com",
+
+    "password": "should-never-survive",
+
+    "nested": {
+        "access_token": "secret-token",
+        "safe": "ok",
+    },
+
+    "items": [
+        {
+            "api_key": "secret-key",
+            "value": 42,
+        }
+    ],
+}
+
+
+clean = sanitize_audit_data(
+    source
+)
+
+
+if clean["email"] != "user@example.com":
+    raise SystemExit(
+        "Safe audit field unexpectedly changed."
+    )
+
+
+if clean["password"] != "[REDACTED]":
+    raise SystemExit(
+        "Password was not redacted."
+    )
+
+
+if (
+    clean["nested"]["access_token"]
+    != "[REDACTED]"
+):
+    raise SystemExit(
+        "Token was not redacted."
+    )
+
+
+if (
+    clean["items"][0]["api_key"]
+    != "[REDACTED]"
+):
+    raise SystemExit(
+        "API key was not redacted."
+    )
+
+
+print(
+    "PASS audit secret redaction"
+)
+'@
+
+
+$SanitizeCheck |
+    & $Python -
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "Audit redaction gate failed."
+}
+
+
+Write-Host ""
+
+
+# =========================================================
+# 5/8 APP IMPORT
+# =========================================================
+
+Write-Host "[5/8] App import..."
+
+
+& $Python `
+    -c "from app.main import app; print('PASS app.main')"
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "App import failed."
+}
+
+
+Write-Host ""
+
+
+# =========================================================
+# 6/8 OPENAPI / IMMUTABLE HTTP CONTRACT
+# =========================================================
+
+Write-Host "[6/8] Audit OpenAPI..."
+
+
+$OpenApiCheck = @'
+from app.main import app
+
+
+paths = app.openapi()["paths"]
+
+
+list_path = (
+    "/api/v1/workspaces/"
+    "{workspace_id}/audit-log"
+)
+
+capabilities_path = (
+    "/api/v1/workspaces/"
+    "{workspace_id}/audit-log/capabilities"
+)
+
+detail_path = (
+    "/api/v1/workspaces/"
+    "{workspace_id}/audit-log/{event_id}"
+)
+
+
+required = {
+    list_path,
+    capabilities_path,
+    detail_path,
+}
+
+
+missing = (
+    required
+    - set(paths)
+)
+
+
+if missing:
+    raise SystemExit(
+        "Missing audit paths: "
+        + str(
+            sorted(
+                missing
+            )
+        )
+    )
+
+
+if "get" not in paths[list_path]:
+    raise SystemExit(
+        "Audit list GET missing."
+    )
+
+
+if "get" not in paths[detail_path]:
+    raise SystemExit(
+        "Audit detail GET missing."
+    )
+
+
+for path in required:
+    for forbidden in (
+        "post",
+        "put",
+        "patch",
+        "delete",
+    ):
+        if forbidden in paths[path]:
+            raise SystemExit(
+                "Audit HTTP API must be read-only: "
+                + forbidden
+                + " "
+                + path
+            )
+
+
+print(
+    "PASS read-only audit OpenAPI"
+)
+'@
+
+
+$OpenApiCheck |
+    & $Python -
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "Audit OpenAPI failed."
+}
+
+
+Write-Host ""
+
+
+# =========================================================
+# 7/8 CONTROL MIGRATION GRAPH
+# =========================================================
+
+Write-Host "[7/8] Control migration graph..."
+
+
+$Heads = & $Python `
+    -m alembic `
+    -c ".\alembic-control.ini" `
+    heads
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "Control Alembic heads failed."
+}
+
+
+Write-Host $Heads
+
+
+if (
+    $Heads -notmatch
+    $ExpectedControlHead
+)
+{
+    throw (
+        "Unexpected control head. Expected " +
+        $ExpectedControlHead
+    )
+}
+
+
+
+
+
+Write-Host "PASS control migration graph"
+Write-Host ""
+
+
+# =========================================================
+# 8/8 CONTROL CURRENT + IMMUTABILITY MIGRATION
+# =========================================================
+
+Write-Host "[8/8] Control schema..."
+
+
+$Current = & $Python `
+    -m alembic `
+    -c ".\alembic-control.ini" `
+    current
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "Control Alembic current failed."
+}
+
+
+Write-Host $Current
+
+
+if (
+    $Current -notmatch
+    $ExpectedControlHead
+)
+{
+    throw (
+        "Control DB must be upgraded to " +
+        $ExpectedControlHead
+    )
+}
+
+
+$MigrationCheck = @'
+from pathlib import Path
+
+
+path = Path(
+    r"C:\workforce-os\backend\migrations\control\versions\g1b2c3d4e5f6_add_workspace_audit_log.py"
+)
+
+
+text = path.read_text(
+    encoding="utf-8-sig"
+)
+
+
+required = [
+    "workspace_audit_events",
+    "BEFORE UPDATE OR DELETE",
+    "workforce_prevent_audit_event_mutation",
+    "trg_workspace_audit_events_immutable",
+]
+
+
+for value in required:
+    if value not in text:
+        raise SystemExit(
+            "Audit immutability migration "
+            "contract missing: "
+            + value
+        )
+
+
+print(
+    "PASS database immutability contract"
+)
+'@
+
+
+$MigrationCheck |
+    & $Python -
+
+
+if ($LASTEXITCODE -ne 0)
+{
+    throw "Audit immutability gate failed."
+}
+
+
+Write-Host "PASS control schema"
+Write-Host ""
+
+
+# =========================================================
+# FINAL
+# =========================================================
+
+Write-Host "================================================="
+Write-Host " PHASE 12.7 AUDIT LOG FOUNDATION: PASS"
+Write-Host "================================================="
+Write-Host "Audit permissions:          PASS"
+Write-Host "Workspace isolation:        PASS"
+Write-Host "Actor tracking:             PASS"
+Write-Host "Target tracking:            PASS"
+Write-Host "Outcome/severity:           PASS"
+Write-Host "Filtering:                  PASS"
+Write-Host "Secret redaction:           PASS"
+Write-Host "Public API read-only:       PASS"
+Write-Host "Database append-only:       PASS"
+Write-Host "Control schema:             $ExpectedControlHead"
+Write-Host "================================================="

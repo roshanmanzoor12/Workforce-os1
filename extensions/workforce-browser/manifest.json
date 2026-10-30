@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "WorkforceOS Website Tracking",
+  "version": "0.11.1",
+  "description": "Disclosed WorkforceOS workplace website-domain tracking extension.",
+
+  "permissions": [
+    "tabs",
+    "nativeMessaging",
+    "alarms"
+  ],
+
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+
+  "action": {
+    "default_title": "WorkforceOS Website Tracking"
+  }
+}

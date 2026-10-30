@@ -1,0 +1,1 @@
+"""Personal account dashboard reads from the control database."""

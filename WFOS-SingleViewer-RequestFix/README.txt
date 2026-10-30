@@ -1,0 +1,1 @@
+Single-viewer browser screen sharing UI. Employee Accept/Decline modal when page is open; owner Request session targets selected employee. Does not enable unattended screen capture, native agent media streaming, cross-network TURN, or prove website/app tracking. Browser chooser always requires user interaction. Apply.ps1 dry-run, -Apply, -Rollback.

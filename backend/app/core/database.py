@@ -6,6 +6,7 @@ from typing import AsyncIterator
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -28,11 +29,10 @@ logger = get_logger(__name__)
 control_engine: AsyncEngine = create_async_engine(
     settings.control_database_url,
     echo=settings.debug,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    pool_timeout=30,
-    pool_recycle=1800,
+    poolclass=NullPool,
+    connect_args={
+        "statement_cache_size": 0,
+    },
 )
 
 
